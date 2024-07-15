@@ -31,7 +31,7 @@ class ProgramGenerator(object):
 
   """
 
-  def __init__(self, selectionFile='selection_push0.csv', seed=0):
+  def __init__(self, selectionFile='selection.csv', seed=0):
     random.seed(a=seed, version=2)
 
     opcodes = prepare_opcodes(os.path.join(dir_path, 'data', 'opcodes.csv'))
