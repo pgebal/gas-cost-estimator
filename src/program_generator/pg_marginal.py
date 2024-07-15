@@ -95,7 +95,6 @@ class ProgramGenerator(object):
 
   def _generate_single_program(self, operation, op_count):
     # for compatibility with the generate_single_marginal function
-    print(arity(operation))
     single_op_pushes = ["60ff"] * arity(operation)
 
     return Program(generate_single_marginal(single_op_pushes, operation, op_count), operation['Mnemonic'], op_count)
