@@ -83,14 +83,13 @@ class Measurements(object):
         else:
             return bytecode
 
-    def measure(self, sample_size=1, mode="all", evm="geth", n_samples=1, input_file="", exec_path=""):
+    def measure(self, mode="all", evm="geth", n_samples=1, input_file="", exec_path=""):
         """
         Main entrypoint of the CLI tool.
 
         Reads programs' CSV from STDIN. Prints measurement results CSV to STDOUT
 
         Parameters:
-        sample_size (integer): size of a sample to pass into the EVM measuring executable
         mode (string): Measurement mode. Allowed: total, all, trace, benchmark
         evm (string): which evm use. Default: geth
         n_samples (integer): number of samples (individual starts of the EVM measuring executable) to do
@@ -166,21 +165,21 @@ class Measurements(object):
                 instrumenter_result = None
                 if evm == geth:
                     if mode == benchmark_mode:
-                        instrumenter_result = self.run_geth_benchmark(program, sample_size, exec_path)
+                        instrumenter_result = self.run_geth_benchmark(program, exec_path)
                 elif evm == evmone:
-                    instrumenter_result = self.run_evmone(mode, program, sample_size)
+                    instrumenter_result = self.run_evmone(mode, program)
                 elif evm == nethermind:
                     if mode == benchmark_mode:
-                        instrumenter_result = self.run_nethermind_benchmark(program, sample_size, exec_path)
+                        instrumenter_result = self.run_nethermind_benchmark(program, exec_path)
                     else:
-                        instrumenter_result = self.run_nethermind(program, sample_size)
+                        instrumenter_result = self.run_nethermind(program)
                 elif evm == ethereumjs and mode == benchmark_mode:
-                    instrumenter_result = self.run_ethereumjs_benchmark(program, sample_size)               
+                    instrumenter_result = self.run_ethereumjs_benchmark(program)               
                 elif evm == erigon:
                     if mode == benchmark_mode:
-                        instrumenter_result = self.run_erigon_benchmark(program, sample_size, exec_path)
+                        instrumenter_result = self.run_erigon_benchmark(program, exec_path)
                 elif evm == revm and mode == benchmark_mode:
-                    instrumenter_result = self.run_revm_benchmark(program, sample_size, exec_path)
+                    instrumenter_result = self.run_revm_benchmark(program, exec_path)
 
                 if mode == trace_opcodes:
                     instrumenter_result = self.sanitize_tracer_result(instrumenter_result)
@@ -217,37 +216,34 @@ class Measurements(object):
 
         return "{},{},{}".format(int(execution_time), int(allocations), int(allocated_bytes))
 
-    def run_geth_benchmark(self, program, sample_size, exec_path):
+    def run_geth_benchmark(self, program, exec_path):
         if exec_path == "":
-            exec_path = os.path.abspath(DIR_PATH +'/'+ DEFAULT_EXEC_GETH)
+            exec_path = os.path.abspath(DIR_PATH + '/' + DEFAULT_EXEC_GETH)
         else:
             exec_path = os.path.abspath(exec_path)
 
         args = ['--code', program.bytecode, '--bench', 'run']
         invocation = [exec_path] + args
+        
+        pro = subprocess.Popen(invocation, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        stdout, stderr = pro.communicate()
 
-        results = []
-        for run_id in range(1, sample_size + 1):
-            pro = subprocess.Popen(invocation, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-            stdout, stderr = pro.communicate()
+        instrumenter_result = self._parse_geth_benchmark_output(stdout, stderr)
 
-            instrumenter_result = self._parse_geth_benchmark_output(stdout, stderr)
+        return [str(run_id) + "," + instrumenter_result]
 
-            results.append(str(run_id) + "," + instrumenter_result)
-        return results
-
-    def run_nethermind(self, program, sample_size):
-        geth_benchmark = [
+    def run_nethermind(self, program):
+        nethermind_benchmark = [
             './instrumentation_measurement/nethermind_benchmark/src/Nethermind/Imapp.Measurement.Runner/bin/Release/net6.0/Imapp.Measurement.Runner']
-        args = ['--bytecode', program.bytecode, '--print-csv', '--sample-size={}'.format(sample_size)]
-        invocation = geth_benchmark + args
+        args = ['--bytecode', program.bytecode, '--print-csv', '--sample-size=1']
+        invocation = nethermind_benchmark + args
         result = subprocess.run(invocation, stdout=subprocess.PIPE, universal_newlines=True)
         assert result.returncode == 0
         # strip the final newline
         instrumenter_result = result.stdout.split('\n')[:-1]
         return instrumenter_result
 
-    def run_nethermind_benchmark(self, program, sample_size, exec_path):
+    def run_nethermind_benchmark(self, program, exec_path):
         if exec_path == "":
             exec_path = os.path.abspath(DIR_PATH +'/'+ DEFAULT_EXEC_NETHERMIND)
         else:
@@ -258,19 +254,16 @@ class Measurements(object):
 
         invocation = [exec_path] + args
 
-        results = []
-        for run_id in range(1, sample_size + 1):
-            pro = subprocess.Popen(invocation, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=exec_parent)
-            stdout, stderr = pro.communicate()
+        pro = subprocess.Popen(invocation, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, cwd=exec_parent)
+        stdout, stderr = pro.communicate()
 
-            if (stderr != ""):
-                print("Error in nethermind benchmark")
-                print(stderr)
-                return
-            
-            instrumenter_result = stdout.split('\n')[0]
-            results.append(str(run_id) + "," + instrumenter_result)
-        return results
+        if (stderr != ""):
+            print("Error in nethermind benchmark")
+            print(stderr)
+            return
+        
+        instrumenter_result = stdout.split('\n')[0]
+        return [str(run_id) + "," + instrumenter_result]
 
     def run_evmone(self, mode, program, sampleSize):
         if mode == 'perf':
